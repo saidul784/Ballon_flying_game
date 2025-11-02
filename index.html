@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flying Balloon Game</title>
+    <style>
+        /* CSS for the game */
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden; /* Important: Prevents scrollbars */
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        #game-container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            /* Aerospace vibe background with a gradient and stars */
+            background: linear-gradient(to top, #020107, #001f3f, #000000);
+            overflow: hidden;
+        }
+
+        #balloon {
+            position: absolute;
+            width: 50px;
+            height: 65px;
+            background: radial-gradient(circle at 30% 30%, #ff7b7b, #ff0000);
+            border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%; /* Classic balloon shape */
+            box-shadow: inset -5px -5px 10px rgba(0, 0, 0, 0.3);
+            transition: transform 0.2s ease-out; /* Smooth rotation */
+        }
+        
+        /* A small basket for the balloon */
+        #balloon::after {
+            content: '';
+            position: absolute;
+            width: 20px;
+            height: 15px;
+            background-color: #8B4513; /* SaddleBrown */
+            bottom: -10px;
+            left: 50%;
+            transform: translateX(-50%);
+            border-radius: 0 0 4px 4px;
+        }
+
+        .obstacle {
+            position: absolute;
+            width: 60px;
+            background: linear-gradient(to right, #888, #bbb, #888);
+            border: 2px solid #555;
+            box-shadow: 0 0 10px rgba(255, 255, 255, 0.2);
+        }
+
+        #score {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            font-size: 2.5em;
+            font-weight: bold;
+            color: white;
+            text-shadow: 2px 2px 4px #000000;
+            z-index: 100;
+        }
+
+        #start-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            z-index: 200;
+        }
+
+        #start-screen h1 {
+            font-size: 3em;
+            margin-bottom: 0;
+        }
+        
+        #start-screen p {
+            font-size: 1.2em;
+   
+        }
+
+        #start-button {
+            padding: 15px 30px;
+            font-size: 1.5em;
+            color: #333;
+            background-color: #eee;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: background-color 0.3s, transform 0.1s;
+        }
+
+        #start-button:hover {
+            background-color: #fff;
+        }
+        #start-button:active {
+            transform: scale(0.95);
+        }
+        
+        /* Starfield background elements */
+        .star {
+            position: absolute;
+            background-color: white;
+            border-radius: 50%;
+            animation: twinkle 5s infinite;
+        }
+        
+        @keyframes twinkle {
+            0%, 100% { opacity: 0.5; }
+            50% { opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="game-container">
+        <div id="score">Score: 0</div>
+        <div id="balloon"></div>
+        <div id="start-screen">
+            <h1 id="title-text">Flying Balloon</h1>
+            <p id="instruction-text">Click or Press Space to fly up. Avoid the pipes!</p>
+            <button id="start-button">Start Game</button>
+        </div>
+    </div>
+
+    <script>
+        // JavaScript for the game logic
+        document.addEventListener('DOMContentLoaded', () => {
+            // DOM Elements
+            const gameContainer = document.getElementById('game-container');
+            const balloon = document.getElementById('balloon');
+            const scoreDisplay = document.getElementById('score');
+            const startScreen = document.getElementById('start-screen');
+            const startButton = document.getElementById('start-button');
+            const titleText = document.getElementById('title-text');
+            const instructionText = document.getElementById('instruction-text');
+
+            // Game variables
+            let isGameOver = true;
+            let score = 0;
+            
+            // Balloon physics
+            let balloonBottom;
+            let balloonLeft;
+            const gravity = 2; // How fast the balloon falls
+            const jumpHeight = 45; // How high it jumps on click/press
+            let verticalSpeed = 0;
+
+            // Obstacle settings
+            const obstacleWidth = 60;
+            const obstacleGap = 200; // Gap between top and bottom pipe
+            const obstacleSpeed = 4;
+            let obstacleInterval;
+            
+            // Game loop
+            let gameLoopInterval;
+
+            // --- Starfield Generation ---
+            function createStars() {
+                const starCount = 150;
+                for (let i = 0; i < starCount; i++) {
+                    const star = document.createElement('div');
+                    star.className = 'star';
+                    star.style.width = `${Math.random() * 2 + 1}px`;
+                    star.style.height = star.style.width;
+                    star.style.left = `${Math.random() * 100}%`;
+                    star.style.top = `${Math.random() * 100}%`;
+                    // Vary animation duration for a more random twinkle effect
+                    star.style.animationDuration = `${Math.random() * 3 + 2}s`;
+                    star.style.animationDelay = `${Math.random() * 3}s`;
+                    gameContainer.appendChild(star);
+                }
+            }
+
+            // --- Game Controls ---
+            function control(e) {
+                if (e.code === 'Space' || e.type === 'mousedown') {
+                    if (!isGameOver) {
+                        jump();
+                    }
+                }
+            }
+
+            function jump() {
+                // Give an upward velocity boost
+                verticalSpeed = jumpHeight / 4; 
+                // A little visual tilt for effect
+                balloon.style.transform = 'rotate(-20deg)';
+                setTimeout(() => {
+                    if (!isGameOver) balloon.style.transform = 'rotate(0deg)';
+                }, 150);
+            }
+
+            // --- Game Lifecycle ---
+            function startGame() {
+                isGameOver = false;
+                score = 0;
+                updateScore();
+                startScreen.style.display = 'none';
+
+                // Reset balloon position and speed
+                balloonBottom = gameContainer.clientHeight / 2;
+                balloonLeft = 100;
+                verticalSpeed = 0;
+                balloon.style.left = balloonLeft + 'px';
+                balloon.style.bottom = balloonBottom + 'px';
+
+                // Clear any old intervals
+                clearInterval(gameLoopInterval);
+                clearInterval(obstacleInterval);
+                
+                // Remove old obstacles
+                document.querySelectorAll('.obstacle').forEach(obs => obs.remove());
+
+                // Start new game loops
+                gameLoopInterval = setInterval(gameLoop, 20); // Main game logic runs 50 times/sec
+                obstacleInterval = setInterval(createObstacle, 2000); // Create obstacles every 2 seconds
+            }
+
+            function gameLoop() {
+                if (isGameOver) return;
+                
+                // Apply gravity
+                verticalSpeed -= gravity / 10;
+                balloonBottom += verticalSpeed;
+                balloon.style.bottom = balloonBottom + 'px';
+
+                // Check for ground collision
+                if (balloonBottom <= 0) {
+                    endGame();
+                }
+
+                moveObstacles();
+                checkCollisions();
+            }
+
+            function endGame() {
+                isGameOver = true;
+                clearInterval(gameLoopInterval);
+                clearInterval(obstacleInterval);
+                
+                // Show game over screen
+                titleText.innerText = "Game Over!";
+                instructionText.innerText = `Your Score: ${score}`;
+                startButton.innerText = "Try Again";
+                startScreen.style.display = 'flex';
+            }
+            
+            function updateScore() {
+                scoreDisplay.textContent = `Score: ${score}`;
+            }
+
+            // --- Obstacle Logic ---
+            function createObstacle() {
+                if (isGameOver) return;
+
+                const obstacleBottomHeight = Math.random() * (gameContainer.clientHeight / 2 - 50) + 50;
+                const obstacleTopHeight = gameContainer.clientHeight - obstacleBottomHeight - obstacleGap;
+
+                // Bottom Obstacle
+                const obstacleBottom = document.createElement('div');
+                obstacleBottom.classList.add('obstacle');
+                obstacleBottom.style.height = obstacleBottomHeight + 'px';
+                obstacleBottom.style.left = gameContainer.clientWidth + 'px';
+                obstacleBottom.style.bottom = '0px';
+                gameContainer.appendChild(obstacleBottom);
+
+                // Top Obstacle
+                const obstacleTop = document.createElement('div');
+                obstacleTop.classList.add('obstacle');
+                obstacleTop.style.height = obstacleTopHeight + 'px';
+                obstacleTop.style.left = gameContainer.clientWidth + 'px';
+                obstacleTop.style.top = '0px';
+                gameContainerappendChild(obstacleTop);
+                
+                // Attach both obstacles to each other for scoring purposes
+                obstacleBottom.pair = obstacleTop;
+            }
+
+            function moveObstacles() {
+                document.querySelectorAll('.obstacle').forEach(obstacle => {
+                    let obstacleLeft = parseFloat(obstacle.style.left);
+                    obstacleLeft -= obstacleSpeed;
+                    obstacle.style.left = obstacleLeft + 'px';
+
+                    // Scoring: Check if obstacle has passed the balloon
+                    if (obstacle.pair && !obstacle.scored && obstacleLeft + obstacleWidth < balloonLeft) {
+                        obstacle.scored = true; // Mark as scored
+                        obstacle.pair.scored = true;
+                        score++;
+                        updateScore();
+                    }
+
+                    // Cleanup: Remove obstacles that are off-screen
+                    if (obstacleLeft < -obstacleWidth) {
+                        obstacle.remove();
+                    }
+                });
+            }
+
+            // --- Collision Detection ---
+            function checkCollisions() {
+                const balloonRect = balloon.getBoundingClientRect();
+
+                document.querySelectorAll('.obstacle').forEach(obstacle => {
+                    const obstacleRect = obstacle.getBoundingClientRect();
+                    // Simple AABB (Axis-Aligned Bounding Box) collision detection
+                    if (
+                        balloonRect.right > obstacleRect.left &&
+                        balloonRect.left < obstacleRect.right &&
+                        balloonRect.bottom > obstacleRect.top &&
+                        balloonRect.top < obstacleRect.bottom
+                    ) {
+                        endGame();
+                    }
+                });
+            }
+
+            // --- Event Listeners ---
+            document.addEventListener('mousedown', control);
+            document.addEventListener('keydown', control);
+            startButton.addEventListener('click', (e) => {
+                e.stopPropagation(); // Prevent click from triggering jump on start
+                startGame();
+            });
+
+            // --- Initial Setup ---
+            createStars();
+        });
+    </script>
+</body>
+</html>
